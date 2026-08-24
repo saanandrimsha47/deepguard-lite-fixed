@@ -7,7 +7,7 @@ import os
 
 class DeepGuardLite(nn.Module):
     def __init__(self):
-        super(DeepGuardLite, self).__init__()
+        super().__init__()
         self.conv1 = nn.Conv2d(3, 32, 3, padding=1)
         self.conv2 = nn.Conv2d(32, 64, 3, padding=1)
         self.conv3 = nn.Conv2d(64, 128, 3, padding=1)
@@ -16,44 +16,30 @@ class DeepGuardLite(nn.Module):
         self.fc2 = nn.Linear(256, 2)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.5)
-
     def forward(self, x):
         x = self.pool(self.relu(self.conv1(x)))
         x = self.pool(self.relu(self.conv2(x)))
         x = self.pool(self.relu(self.conv3(x)))
         x = x.view(-1, 128 * 4 * 4)
         x = self.dropout(self.relu(self.fc1(x)))
-        x = self.fc2(x)
-        return x
+        return self.fc2(x)
 
 device = torch.device("cpu")
 model = DeepGuardLite()
+print("Loading model...")
 model.load_state_dict(torch.load("deepguard_lite_c40.pth", map_location=device))
 model.eval()
-model.to(device)
+print("Model loaded!")
 
-transform = transforms.Compose([
-    transforms.Resize((32, 32)),
-    transforms.ToTensor(),
-])
+transform = transforms.Compose([transforms.Resize((32,32)), transforms.ToTensor()])
 
 def predict(img):
-    if img is None:
-        return "Please upload an image"
+    if img is None: return "Please upload an image"
     img = Image.fromarray(img).convert("RGB")
-    img = transform(img).unsqueeze(0).to(device)
+    img = transform(img).unsqueeze(0)
     with torch.no_grad():
-        output = model(img)
-        _, predicted = torch.max(output, 1)
-        if predicted.item() == 0:
-            return "✅ REAL Image Detected"
-        else:
-            return "🚨 FAKE / Deepfake Detected"
+        _, pred = torch.max(model(img), 1)
+        return "✅ REAL Image Detected" if pred.item()==0 else "🚨 FAKE / Deepfake Detected"
 
-gr.Interface(
-    fn=predict, 
-    inputs=gr.Image(label="Upload Image"), 
-    outputs=gr.Textbox(label="Result"), 
-    title="DeepGuard Lite - c40 Blurry Detector",
-    description="Upload a face image to check if Real or Deepfake"
-).launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
+demo = gr.Interface(fn=predict, inputs=gr.Image(label="Upload Image"), outputs=gr.Textbox(label="Result"), title="DeepGuard Lite - c40 Blurry Detector")
+demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
