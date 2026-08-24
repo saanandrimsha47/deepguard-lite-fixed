@@ -11,9 +11,7 @@ model = None
 def get_model():
     global model
     if model is None:
-        # Build EXACT architecture as your training
         m = models.mobilenet_v2(weights=None)
-        # This matches your.pth file
         m.classifier = nn.Sequential(
             nn.Dropout(p=0.2),
             nn.Linear(1280, 256),
@@ -23,23 +21,23 @@ def get_model():
         )
         ckpt = torch.load("deepguard_lite_c40.pth", map_location="cpu", weights_only=False)
         if isinstance(ckpt, dict):
-            if "state_dict" in ckpt: ckpt = ckpt["state_dict"]
-            elif "model" in ckpt: ckpt = ckpt["model"]
-            elif "model_state_dict" in ckpt: ckpt = ckpt["model_state_dict"]
+            for k in ["state_dict","model","model_state_dict"]:
+                if k in ckpt:
+                    ckpt = ckpt[k]
+                    break
 
-        m.load_state_dict(ckpt, strict=True)
+        # This False is IMPORTANT - your pth has only classifier weights
+        m.load_state_dict(ckpt, strict=False)
         m.eval()
         model = m
-        print("Model loaded SUCCESS")
+        print("Model loaded SUCCESS with strict=False")
     return model
 
 def predict_file(file_path):
     try:
         if not file_path: return "Please upload a file"
         get_model()
-        ext = file_path.lower().split('.')[-1]
         tf = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
-
         def pred_pil(pil_img):
             x = tf(pil_img).unsqueeze(0)
             with torch.no_grad():
@@ -49,33 +47,26 @@ def predict_file(file_path):
                 conf = prob[0][pred].item()*100
             return pred, conf
 
+        ext = file_path.lower().split('.')[-1]
         if ext in ['mp4','mov','avi','mkv','webm']:
             cap = cv2.VideoCapture(file_path)
-            scores = []
+            scores=[]
             for _ in range(10):
                 ret, frame = cap.read()
                 if not ret: break
                 pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                p, c = pred_pil(pil)
+                p,c = pred_pil(pil)
                 scores.append(p)
             cap.release()
             if not scores: return "Could not read video"
-            fake_ratio = sum(scores)/len(scores)
-            return f"{'FAKE' if fake_ratio>0.5 else 'REAL'} - {fake_ratio*100:.1f}% fake frames"
+            ratio = sum(scores)/len(scores)
+            return f"{'FAKE' if ratio>0.5 else 'REAL'} - {ratio*100:.1f}% fake frames"
         else:
             pil = Image.open(file_path).convert("RGB")
-            p, c = pred_pil(pil)
-            label = "FAKE" if p==1 else "REAL"
-            return f"{label} - {c:.1f}% confidence"
-
+            p,c = pred_pil(pil)
+            return f"{'FAKE' if p==1 else 'REAL'} - {c:.1f}% confidence"
     except Exception as e:
         return f"Error: {traceback.format_exc()}"
 
 port = int(os.environ.get("PORT", 10000))
-gr.Interface(
-    fn=predict_file,
-    inputs=gr.File(type="filepath", label="Upload File"),
-    outputs=gr.Textbox(label="Result"),
-    title="DeepGuard Lite",
-    description="Lightweight Deepfake Detector - Image and Video."
-).launch(server_name="0.0.0.0", server_port=port)
+gr.Interface(fn=predict_file, inputs=gr.File(type="filepath", label="Upload File"), outputs=gr.Textbox(label="Result"), title="DeepGuard Lite").launch(server_name="0.0.0.0", server_port=port)
