@@ -26,20 +26,17 @@ class DeepGuardLite(nn.Module):
 
 device = torch.device("cpu")
 model = DeepGuardLite()
-print("Loading model...")
 model.load_state_dict(torch.load("deepguard_lite_c40.pth", map_location=device))
 model.eval()
-print("Model loaded!")
 
 transform = transforms.Compose([transforms.Resize((32,32)), transforms.ToTensor()])
 
 def predict(img):
-    if img is None: return "Please upload an image"
+    if img is None: return "Upload image"
     img = Image.fromarray(img).convert("RGB")
-    img = transform(img).unsqueeze(0)
+    img_t = transform(img).unsqueeze(0)
     with torch.no_grad():
-        _, pred = torch.max(model(img), 1)
-        return "✅ REAL Image Detected" if pred.item()==0 else "🚨 FAKE / Deepfake Detected"
+        _, p = torch.max(model(img_t), 1)
+        return "REAL" if p.item()==0 else "FAKE"
 
-demo = gr.Interface(fn=predict, inputs=gr.Image(label="Upload Image"), outputs=gr.Textbox(label="Result"), title="DeepGuard Lite - c40 Blurry Detector")
-demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
+gr.Interface(fn=predict, inputs=gr.Image(), outputs=gr.Textbox(), title="DeepGuard Lite").launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
