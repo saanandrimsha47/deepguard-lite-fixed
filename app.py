@@ -12,7 +12,7 @@ def load_model():
     if model is None:
         m = models.mobilenet_v2(weights=None)
         m.classifier[1] = nn.Linear(1280, 2)
-        m.load_state_dict(torch.load("deepguard_lite.pth", map_location="cpu"))
+        m.load_state_dict(torch.load("deepguard_lite_c40.pth", map_location="cpu"))
         m.eval()
         model = m
     return model
