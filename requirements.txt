@@ -1,5 +1,4 @@
+gradio
 torch
 torchvision
-gradio
-Pillow
-gunicorn
+pillow
