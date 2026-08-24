@@ -31,7 +31,6 @@ def predict_file(file_path):
         return "Upload Image or Video"
     ext = file_path.lower().split('.')[-1]
 
-    # VIDEO -> C0 / C23 / C40 APPLICABLE
     if ext in ['mp4','mov','avi','mkv','webm']:
         cap = cv2.VideoCapture(file_path)
         preds = []
@@ -42,27 +41,28 @@ def predict_file(file_path):
             p,c = predict_pil(pil)
             preds.append(p)
         cap.release()
-        fake_ratio = sum(preds)/len(preds) if preds else 0
+        if not preds:
+            return "Could not read video"
+        fake_ratio = sum(preds)/len(preds)
         if fake_ratio > 0.5:
-            return f"🎬 Video: 🚨 Fake - Deepfake ({fake_ratio*100:.0f}% fake frames)\nCompression: Robust to C0(raw), C23(HQ), C40(LQ)"
+            return f"Video: Fake - Deepfake ({fake_ratio*100:.0f}% fake frames)\nRobust to C0 / C23 / C40"
         else:
-            return f"🎬 Video: ✅ Real ({(1-fake_ratio)*100:.0f}% real frames)\nCompression: Robust to C0(raw), C23(HQ), C40(LQ)"
-
-    # IMAGE -> C0 / C23 / C40 ALSO applicable (JPEG compression)
+            return f"Video: Real ({(1-fake_ratio)*100:.0f}% real frames)\nRobust to C0 / C23 / C40"
     else:
         pil = Image.open(file_path).convert("RGB")
         pred, conf = predict_pil(pil)
         if pred==0:
-            return f"🖼️ Image: ✅ Real ({conf:.1f}%)\nCompression: Tested on JPEG C0/C23/C40 levels"
+            return f"Image: Real ({conf:.1f}%)\nTested on C0/C23/C40"
         else:
-            return f"🖼️ Image: 🚨 Fake - Deepfake ({conf:.1f}%)\nCompression: Tested on JPEG C0/C23/C40 levels"
+            return f"Image: Fake ({conf:.1f}%)\nTested on C0/C23/C40"
 
 port = int(os.environ.get("PORT", 10000))
+
 demo = gr.Interface(
     fn=predict_file,
-    inputs=gr.File(label="Upload Image or Video", file_types=["image","video"]),
+    inputs=gr.File(label="Upload File", file_types=["image","video"], type="filepath"),
     outputs=gr.Textbox(label="Result"),
-    title="DeepGuard - Image + Video Detector",
-    description="Detects Deepfakes in Images & Videos. Evaluated on C0/C23/C40 compression."
+    title="DeepGuard Lite",
+    description="Lightweight Deepfake Detector - Image and Video."
 )
 demo.launch(server_name="0.0.0.0", server_port=port)
