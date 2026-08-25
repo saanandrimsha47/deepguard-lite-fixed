@@ -1,7 +1,6 @@
 torch
 torchvision
 gradio
-gdown
-opencv-python
-pillow
+Pillow
+opencv-python-headless
 numpy
