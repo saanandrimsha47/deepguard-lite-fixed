@@ -41,7 +41,7 @@ def predict_frame(pil_img):
 def predict_image(img):
     if img is None: return "Upload an image"
     score = predict_frame(img)
-    label = "FAKE 🔴" if score > 0.40 else "REAL 🟢"
+    label = "FAKE 🔴" if score > 0.43 else "REAL 🟢"
     return f"{label} - Confidence: {score:.4f}"
 
 def predict_video(video_path):
