@@ -41,7 +41,7 @@ def predict_frame(pil_img):
 def predict_image(img):
     if img is None: return "Upload an image"
     score = predict_frame(img)
-    label = "FAKE 🔴" if score > 0.43 else "REAL 🟢"
+    label = "FAKE 🔴" if score > 0.41 else "REAL 🟢"
     return f"{label} - Confidence: {score:.4f}"
 
 def predict_video(video_path):
@@ -69,7 +69,7 @@ def predict_video(video_path):
     if not scores: return "Could not read video"
     avg_score = sum(scores) / len(scores)
     fake_count = sum(1 for s in scores if s > 0.43) # FIXED: 0.40 same as image
-    label = "FAKE 🔴" if avg_score > 0.43 else "REAL 🟢"
+    label = "FAKE 🔴" if avg_score > 0.41 else "REAL 🟢"
     return f"{label}\nAvg Score: {avg_score:.4f}\nFake Frames: {fake_count}/{len(scores)}\n(Checked {len(scores)} key frames for speed)"
 
 with gr.Blocks(title="DeepGuard Lite C40") as demo:
