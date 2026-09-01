@@ -25,7 +25,6 @@ model.load_state_dict(state)
 model.to(device)
 model.eval()
 
-# WARMUP for fast first request
 print("Warming up...")
 with torch.no_grad():
     dummy = torch.randn(1,3,224,224).to(device)
@@ -37,7 +36,6 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-# --- GRAD-CAM FOR PYTORCH ---
 class GradCAM:
     def __init__(self, model, target_layer):
         self.model = model
@@ -86,11 +84,9 @@ def predict_video(video_path):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if total_frames == 0:
         return "Could not read video", None
-
     frame_indices = [int(total_frames * i / 5) for i in range(5)]
     scores = []
     frames = []
-
     for idx in frame_indices:
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
@@ -103,19 +99,15 @@ def predict_video(video_path):
             s = torch.sigmoid(model(transform(pil_img).unsqueeze(0).to(device))).item()
         scores.append(s)
     cap.release()
-
     if not scores: return "Could not read video", None
-
-    # FAST: Only 1 Grad-CAM for most suspicious frame
     max_idx = int(np.argmax(scores))
     x = transform(frames[max_idx]).unsqueeze(0).to(device)
     heatmap, _ = gradcam(x)
     best_heatmap_img = apply_colormap(frames[max_idx], heatmap)
-
     avg_score = sum(scores) / len(scores)
     fake_count = sum(1 for s in scores if s > 0.41)
     label = "FAKE 🔴" if avg_score > 0.41 else "REAL 🟢"
-    return f"{label}\nAvg Score: {avg_score:.4f}\nFake Frames: {fake_count}/{len(scores)}\n(Checked {len(scores)} key frames for speed)", best_heatmap_img
+    return f"{label}\nAvg Score: {avg_score:.4f}\nFake Frames: {fake_count}/{len(scores)}", best_heatmap_img
 
 with gr.Blocks(title="DeepGuard Lite - Strongest for Blurry/Compressed Fakes") as demo:
     gr.Markdown("# DeepGuard Lite - Strongest for Blurry/Compressed Fakes")
@@ -124,14 +116,14 @@ with gr.Blocks(title="DeepGuard Lite - Strongest for Blurry/Compressed Fakes") a
         img_in = gr.Image(type="pil", label="Upload Image")
         with gr.Row():
             img_out = gr.Textbox(label="Result")
-            heatmap_out = gr.Image(type="pil", label="Grad-CAM Heatmap - Red = Fake Region")
+            heatmap_out = gr.Image(type="pil", label="Grad-CAM - Red = Fake Region")
         gr.Button("Detect").click(predict_image, inputs=img_in, outputs=[img_out, heatmap_out])
     with gr.Tab("Video Detector"):
         vid_in = gr.Video(label="Upload Video")
         with gr.Row():
             vid_out = gr.Textbox(label="Result")
-            vid_heatmap_out = gr.Image(type="pil", label="Most Suspicious Frame + Heatmap")
+            vid_heatmap_out = gr.Image(type="pil", label="Most Suspicious Frame")
         gr.Button("Detect").click(predict_video, inputs=vid_in, outputs=[vid_out, vid_heatmap_out])
 
 port = int(os.environ.get("PORT", 7860))
-demo.queue(max_size=5).launch(server_name="0.0.0.0", server_port=port, show_api=False)
+demo.queue().launch(server_name="0.0.0.0", server_port=port)
