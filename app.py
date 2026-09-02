@@ -84,29 +84,39 @@ def predict_video(video_path):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if total_frames == 0:
         return "Could not read video", None
-    frame_indices = [int(total_frames * i / 5) for i in range(5)]
+
+    frame_indices = set(int(total_frames * i / 5) for i in range(5))
+    max_target = max(frame_indices)
+
     scores = []
     frames = []
-    for idx in frame_indices:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+    idx = 0
+    while idx <= max_target:
         ret, frame = cap.read()
-        if not ret: continue
-        frame = cv2.resize(frame, (224, 224))
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(rgb)
-        frames.append(pil_img)
-        with torch.no_grad():
-            s = torch.sigmoid(model(transform(pil_img).unsqueeze(0).to(device))).item()
-        scores.append(s)
+        if not ret:
+            break
+        if idx in frame_indices:
+            frame = cv2.resize(frame, (224, 224))
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(rgb)
+            frames.append(pil_img)
+            with torch.no_grad():
+                s = torch.sigmoid(model(transform(pil_img).unsqueeze(0).to(device))).item()
+            scores.append(s)
+        idx += 1
     cap.release()
+
     if not scores: return "Could not read video", None
+
     max_idx = int(np.argmax(scores))
     x = transform(frames[max_idx]).unsqueeze(0).to(device)
     heatmap, _ = gradcam(x)
     best_heatmap_img = apply_colormap(frames[max_idx], heatmap)
+
     avg_score = sum(scores) / len(scores)
     fake_count = sum(1 for s in scores if s > 0.41)
     label = "FAKE 🔴" if avg_score > 0.41 else "REAL 🟢"
+
     return f"{label}\nAvg Score: {avg_score:.4f}\nFake Frames: {fake_count}/{len(scores)}", best_heatmap_img
 
 with gr.Blocks(title="DeepGuard Lite - Strongest for Blurry/Compressed Fakes") as demo:
