@@ -9,6 +9,7 @@ import numpy as np
 
 MODEL_PATH = "deepguard_lite_c40.pth"
 device = torch.device("cpu")
+torch.set_num_threads(os.cpu_count())
 
 print(f"Loading {MODEL_PATH}...")
 model = models.efficientnet_b0(weights=None)
@@ -27,7 +28,7 @@ model.eval()
 
 print("Warming up...")
 with torch.no_grad():
-    dummy = torch.randn(1,3,224,224).to(device)
+    dummy = torch.randn(1, 3, 224, 224).to(device)
     model(dummy)
 print("Warm! Model ready.")
 
@@ -36,60 +37,30 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-class GradCAM:
-    def __init__(self, model, target_layer):
-        self.model = model
-        self.target_layer = target_layer
-        self.activations = None
-        self.gradients = None
-        target_layer.register_forward_hook(lambda m,i,o: setattr(self, 'activations', o))
-        target_layer.register_full_backward_hook(lambda m,gi,go: setattr(self, 'gradients', go[0]))
-
-    def __call__(self, x):
-        self.model.zero_grad()
-        out = self.model(x)
-        score = torch.sigmoid(out)
-        out.backward()
-        pooled_grads = torch.mean(self.gradients, dim=[0, 2, 3])
-        activations = self.activations[0]
-        for i in range(activations.shape[0]):
-            activations[i, :, :] *= pooled_grads[i]
-        heatmap = torch.mean(activations, dim=0).detach().cpu()
-        heatmap = torch.maximum(heatmap, torch.tensor(0))
-        heatmap /= torch.max(heatmap) + 1e-8
-        return heatmap.numpy(), score.item()
-
-target_layer = model.features[-1]
-gradcam = GradCAM(model, target_layer)
-
-def apply_colormap(org_im, heatmap):
-    org_im = np.array(org_im.resize((224,224)))
-    heatmap = cv2.resize(heatmap, (org_im.shape[1], org_im.shape[0]))
-    heatmap = np.uint8(255 * heatmap)
-    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-    superimposed = cv2.addWeighted(org_im, 0.6, heatmap, 0.4, 0)
-    return Image.fromarray(superimposed)
 
 def predict_image(img):
-    if img is None: return "Upload an image", None
+    if img is None:
+        return "Upload an image"
     x = transform(img).unsqueeze(0).to(device)
-    heatmap, score = gradcam(x)
+    with torch.no_grad():
+        score = torch.sigmoid(model(x)).item()
     label = "FAKE 🔴" if score > 0.41 else "REAL 🟢"
-    heatmap_img = apply_colormap(img, heatmap)
-    return f"{label} - Confidence: {score:.4f}", heatmap_img
+    return f"{label} - Confidence: {score:.4f}"
+
 
 def predict_video(video_path):
-    if video_path is None: return "Upload a video", None
+    if video_path is None:
+        return "Upload a video"
+
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if total_frames == 0:
-        return "Could not read video", None
+        return "Could not read video"
 
     frame_indices = set(int(total_frames * i / 5) for i in range(5))
     max_target = max(frame_indices)
 
     scores = []
-    frames = []
     idx = 0
     while idx <= max_target:
         ret, frame = cap.read()
@@ -99,41 +70,35 @@ def predict_video(video_path):
             frame = cv2.resize(frame, (224, 224))
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb)
-            frames.append(pil_img)
             with torch.no_grad():
                 s = torch.sigmoid(model(transform(pil_img).unsqueeze(0).to(device))).item()
             scores.append(s)
         idx += 1
     cap.release()
 
-    if not scores: return "Could not read video", None
-
-    max_idx = int(np.argmax(scores))
-    x = transform(frames[max_idx]).unsqueeze(0).to(device)
-    heatmap, _ = gradcam(x)
-    best_heatmap_img = apply_colormap(frames[max_idx], heatmap)
+    if not scores:
+        return "Could not read video"
 
     avg_score = sum(scores) / len(scores)
     fake_count = sum(1 for s in scores if s > 0.41)
     label = "FAKE 🔴" if avg_score > 0.41 else "REAL 🟢"
 
-    return f"{label}\nAvg Score: {avg_score:.4f}\nFake Frames: {fake_count}/{len(scores)}", best_heatmap_img
+    return f"{label}\nAvg Score: {avg_score:.4f}\nFake Frames: {fake_count}/{len(scores)}"
+
 
 with gr.Blocks(title="DeepGuard Lite - Strongest for Blurry/Compressed Fakes") as demo:
     gr.Markdown("# DeepGuard Lite - Strongest for Blurry/Compressed Fakes")
-    gr.Markdown("### C40 Model with Grad-CAM Explainability")
+    gr.Markdown("### C40 Model - Fast CPU Inference")
+
     with gr.Tab("Image Detector"):
         img_in = gr.Image(type="pil", label="Upload Image")
-        with gr.Row():
-            img_out = gr.Textbox(label="Result")
-            heatmap_out = gr.Image(type="pil", label="Grad-CAM - Red = Fake Region")
-        gr.Button("Detect").click(predict_image, inputs=img_in, outputs=[img_out, heatmap_out])
+        img_out = gr.Textbox(label="Result")
+        gr.Button("Detect").click(predict_image, inputs=img_in, outputs=img_out)
+
     with gr.Tab("Video Detector"):
         vid_in = gr.Video(label="Upload Video")
-        with gr.Row():
-            vid_out = gr.Textbox(label="Result")
-            vid_heatmap_out = gr.Image(type="pil", label="Most Suspicious Frame")
-        gr.Button("Detect").click(predict_video, inputs=vid_in, outputs=[vid_out, vid_heatmap_out])
+        vid_out = gr.Textbox(label="Result")
+        gr.Button("Detect").click(predict_video, inputs=vid_in, outputs=vid_out)
 
 port = int(os.environ.get("PORT", 7860))
 demo.queue().launch(server_name="0.0.0.0", server_port=port)
