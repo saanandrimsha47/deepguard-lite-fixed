@@ -1,0 +1,14 @@
+<!DOCTYPE html><html><head><title>DeepGuard Lite</title></head><body style="text-align:center;padding:50px;font-family:Arial">
+<h1>DeepGuard Lite - C40 Detector</h1>
+<p>96.5% | Threshold 0.41 | 15.5MB</p>
+<input type="file" id="f"><button onclick="p()">Check</button>
+<h2 id="r"></h2>
+<script>
+async function p(){
+ let file=document.getElementById('f').files[0];
+ let fd=new FormData(); fd.append('file',file);
+ let res=await fetch('/predict',{method:'POST',body:fd});
+ let j=await res.json();
+ document.getElementById('r').innerText=j.label+' - '+j.fake_prob.toFixed(3);
+}
+</script></body></html>
