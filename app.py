@@ -8,6 +8,7 @@ import gradio as gr
 import numpy as np
 
 MODEL_PATH = "deepguard_lite_c40.pth"
+THRESHOLD = 0.30 # REAL C40 optimal - Val Acc 78.00% F1 0.50
 device = torch.device("cpu")
 torch.set_num_threads(os.cpu_count())
 
@@ -37,16 +38,14 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-
 def predict_image(img):
     if img is None:
         return "Upload an image"
     x = transform(img).unsqueeze(0).to(device)
     with torch.no_grad():
         score = torch.sigmoid(model(x)).item()
-    label = "FAKE 🔴" if score > 0.41 else "REAL 🟢"
-    return f"{label} - Confidence: {score:.4f}"
-
+    label = "FAKE 🔴" if score > THRESHOLD else "REAL 🟢"
+    return f"{label} - Confidence: {score:.4f} (Threshold: {THRESHOLD})"
 
 def predict_video(video_path):
     if video_path is None:
@@ -80,11 +79,10 @@ def predict_video(video_path):
         return "Could not read video"
 
     avg_score = sum(scores) / len(scores)
-    fake_count = sum(1 for s in scores if s > 0.41)
-    label = "FAKE 🔴" if avg_score > 0.41 else "REAL 🟢"
+    fake_count = sum(1 for s in scores if s > THRESHOLD)
+    label = "FAKE 🔴" if avg_score > THRESHOLD else "REAL 🟢"
 
-    return f"{label}\nAvg Score: {avg_score:.4f}\nFake Frames: {fake_count}/{len(scores)}"
-
+    return f"{label}\nAvg Score: {avg_score:.4f} (Threshold: {THRESHOLD})\nFake Frames: {fake_count}/{len(scores)}"
 
 with gr.Blocks(title="DeepGuard Lite - Strongest for Blurry/Compressed Fakes") as demo:
     gr.Markdown("# DeepGuard Lite - Strongest for Blurry/Compressed Fakes")
