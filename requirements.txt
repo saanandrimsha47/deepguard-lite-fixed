@@ -1,6 +1,5 @@
+flask
 torch
 torchvision
-gradio
 Pillow
-opencv-python-headless
-numpy
+gunicorn
