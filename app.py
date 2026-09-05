@@ -1,52 +1,60 @@
-import os
-import torch
+import gradio as gr
+import torch, cv2, tempfile
 import torch.nn as nn
 from torchvision import models, transforms
-from flask import Flask, request, jsonify, render_template
 from PIL import Image
+import numpy as np
 
-app = Flask(__name__)
-THRESHOLD = 0.41 # FINAL LOCKED
+THRESHOLD = 0.41
 MODEL_PATH = "deepguard_lite_c40.pth"
 
-# Model = EXACT same as training - Simple head
-def get_model():
-    model = models.efficientnet_b0(weights=None)
-    # This matches your checkpoint: classifier = [Dropout, Linear(1280,1)]
-    in_features = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(in_features, 1)
-    return model
-
 device = torch.device("cpu")
-model = get_model()
-state = torch.load(MODEL_PATH, map_location=device)
-model.load_state_dict(state)
-model.eval()
+model = models.efficientnet_b0(weights=None)
+model.classifier[1] = nn.Linear(model.classifier[1].in_features, 1)
+model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+model.eval().to(device)
 
-transform = transforms.Compose([
-    transforms.Resize((224,224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
-])
+tfm = transforms.Compose([transforms.Resize((224,224)), transforms.ToTensor()])
 
-@app.route("/")
-def home():
-    return render_template("index.html") if os.path.exists("templates/index.html") else "DeepGuard Lite Live - POST /predict"
-
-@app.route("/predict", methods=["POST"])
-def predict():
-    file = request.files.get("file")
-    if not file:
-        return jsonify({"error":"No file"}), 400
-    img = Image.open(file.stream).convert("RGB")
-    tensor = transform(img).unsqueeze(0)
+def predict_frame(pil_img):
+    t = tfm(pil_img).unsqueeze(0).to(device)
     with torch.no_grad():
-        logit = model(tensor)
-        prob = torch.sigmoid(logit).item()
-    label = "FAKE" if prob > THRESHOLD else "REAL"
-    return jsonify({"label": label, "fake_prob": prob, "threshold": THRESHOLD})
+        return torch.sigmoid(model(t)).item()
 
-# THIS FIXES RENDER PORT ERROR
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+def predict_image(img):
+    if img is None: return "Upload image"
+    prob = predict_frame(img)
+    label = "FAKE 🔴" if prob > THRESHOLD else "REAL 🟢"
+    return f"{label}\nFake Prob: {prob:.4f} | Threshold: {THRESHOLD}"
+
+def predict_video(video_path):
+    if video_path is None: return "Upload video"
+    cap = cv2.VideoCapture(video_path)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    idxs = np.linspace(0, total-1, 10, dtype=int)
+    probs = []
+    for i in idxs:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+        ret, frame = cap.read()
+        if ret:
+            pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            probs.append(predict_frame(pil))
+    cap.release()
+    if not probs: return "No face frames"
+    avg = sum(probs)/len(probs)
+    label = "FAKE 🔴" if avg > THRESHOLD else "REAL 🟢"
+    return f"{label}\nAvg Fake Prob: {avg:.4f} (from {len(probs)} frames)\nThreshold: {THRESHOLD}\nAll probs: {[f'{p:.2f}' for p in probs]}"
+
+with gr.Blocks() as demo:
+    gr.Markdown("# DeepGuard Lite C40 - Strongest for Blurry/Compressed Fakes\n**Fine-tuned EfficientNet-B0**")
+    with gr.Tabs():
+        with gr.Tab("Image"):
+            img_in = gr.Image(type="pil", label="Upload Face Image")
+            img_out = gr.Textbox(label="Result")
+            gr.Button("Detect").click(predict_image, img_in, img_out)
+        with gr.Tab("Video"):
+            vid_in = gr.Video(label="Upload Video (C40)")
+            vid_out = gr.Textbox(label="Result")
+            gr.Button("Detect Video").click(predict_video, vid_in, vid_out)
+
+demo.launch()
