@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head><title>DeepGuard Lite</title>
+<style>
+body{font-family:Arial; background:#0f172a; color:white; text-align:center; padding:40px}
+.card{background:#1e293b; max-width:500px; margin:auto; padding:30px; border-radius:15px; box-shadow:0 10px 30px rgba(0,0,0,.5)}
+input{margin:20px 0}
+button{background:#38bdf8; border:none; padding:12px 25px; border-radius:8px; font-weight:bold; cursor:pointer}
+#result{margin-top:20px; font-size:22px; font-weight:bold}
+.real{color:#4ade80}.fake{color:#f87171}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>🛡️ DeepGuard Lite</h1>
+<p>C40 Compressed Deepfake Detector<br>Acc: 96.5% | F1: 0.9369 | Thresh: 0.41 | 15.5MB</p>
+<input type="file" id="file" accept="image/*">
+<br><button onclick="predict()">Analyze</button>
+<div id="result">Upload image to test</div>
+</div>
+<script>
+async function predict(){
+ const file = document.getElementById('file').files[0];
+ if(!file) return alert("Select image");
+ document.getElementById('result').innerText = "Analyzing...";
+ const fd = new FormData(); fd.append('file', file);
+ const res = await fetch('/predict', {method:'POST', body:fd});
+ const data = await res.json();
+ const cls = data.label=="FAKE"? "fake" : "real";
+ document.getElementById('result').innerHTML = `<span class="${cls}">${data.label}</span><br>Fake Prob: ${data.fake_prob.toFixed(4)}<br>Threshold: ${data.threshold}`;
+}
+</script>
+</body>
+</html>
